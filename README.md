@@ -35,4 +35,4 @@
 
 4) unzip the pickle files into "C:\Users\ruihe\GitHub\new-physics\Training_data_pickle"
 
-You should be good to run the scripts
+You should be good to run the script "C:\Users\ruihe\GitHub\new-physics\Basic simulations\AISims\Final\CNN_with_difference.py"
