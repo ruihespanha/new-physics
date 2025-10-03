@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 import pickle
+from numba import jit
 
 # working on this one
 
@@ -107,8 +108,12 @@ def ImageLoaderPKL(folder):
     indexOrderLabels = []  # the order in the simulation of arrays in indexes (2D)
     indexLabels = []  # the id of the simulatin for the sub arrays (1d)
     label_num = 0
+    COUNT = 0
 
     for file in os.listdir(folder):
+        COUNT += 1
+        if COUNT % 25 == 0:
+            print(f"{COUNT}")
         temp_found = False
         for i in range(len(indexLabels)):
             if (
@@ -132,6 +137,7 @@ def ImageLoaderPKL(folder):
             ):
                 temp_found = True
                 try:
+
                     with open(f"{folder}" + "\\" + f"{file}", "rb") as filehandler:
                         loaded_variable = pickle.load(filehandler)
 

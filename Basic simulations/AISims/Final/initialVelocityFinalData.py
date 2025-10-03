@@ -15,10 +15,11 @@ import pickle
 
 backend.default_backend().list_devices("GPU")
 backend.default_backend().set_default_device("GPU")
-COUNT = 100
+COUNT = 0
+temp_pikl = []
 
 
-for i in range(900):
+for i in range(1):
     simHeight = 24
     simWidth = 12
     resolution = 1
@@ -200,11 +201,14 @@ for i in range(900):
     rgb_start[:, :, 2] = np.ones((resolution * simHeight, resolution * simWidth)) / 2
     # PIL_image = Image.fromarray(np.uint8(rgb_start * 255)).convert("RGB")
     # img = Image.fromarray(rgb)
-    with open(
-        f"C:/Users/ruihe/GitHub/Physics-based-Machine-learning-Fluid-sim/Training_data_pickle/RGB_image0_{rand_index}.pkl",
-        "wb",
-    ) as file:
-        pickle.dump((rgb_start), file)
+
+    # with open(
+    #     f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/Sample_sim/RGB_image0_{rand_index}.pkl",
+    #     "wb",
+    # ) as file:
+    #     pickle.dump((rgb_start), file)
+
+    temp_pikl.append(rgb_start)
     # print(res)
     # PIL_image.save(
     #     f"C:/Users/ruihe/GitHub/Physics-based-Machine-learning-Fluid-sim/Training_data/RGB_image0_{rand_index}.png",
@@ -268,11 +272,13 @@ for i in range(900):
         #     f"C:/Users/ruihe/GitHub/Physics-based-Machine-learning-Fluid-sim/Training_data/RGB_image{n}_{rand_index}.png",
         #     "PNG",
         # )
-        with open(
-            f"C:/Users/ruihe/GitHub/Physics-based-Machine-learning-Fluid-sim/Training_data_pickle/RGB_image{n}_{rand_index}.pkl",
-            "wb",
-        ) as file:
-            pickle.dump((rgb), file)
+
+        # with open(
+        #     f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/Sample_sim/RGB_image{n}_{rand_index}.pkl",
+        #     "wb",
+        # ) as file:
+        #     pickle.dump((rgb), file)
+        temp_pikl.append(rgb)
 
         g.set_data(smoke_np)
         k1.set_data(tempArrX)
@@ -282,3 +288,9 @@ for i in range(900):
         fig.canvas.flush_events()
 
     plt.show(block=False)
+
+    with open(
+        f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/Sample_sim/RGB_images_{random.randint(0,10000)}.pkl",
+        "wb",
+    ) as file:
+        pickle.dump((temp_pikl), file)
