@@ -1,7 +1,9 @@
 import ImageLoader as im
 import numpy as np
 import sklearn
+import matplotlib
 import matplotlib.pyplot as plt
+from matplotlib.gridspec import GridSpec
 import random
 import torch
 import torch.nn as nn
@@ -10,16 +12,45 @@ import torch.optim as optim
 from sklearn.preprocessing import StandardScaler
 import copy
 import pickle
+import time
+import datetime
+import json
 
-sample_sim = 0
-count_gamma = 1
+prefix_for_saves = (
+    f"C:/Users/ruihe/GitHub/new-physics/results/NN_results"
+    + datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+)
+print(f'files saved as "{prefix_for_saves}_..."')
+parameters = {
+    "input_training_file": f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_images.pkl",
+    "output_training_file": f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_image_labels.pkl",
+    "sample_simulation_file": f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/Sample_sim/RGB_images_3619.pkl",
+    "image_number_rows": 24,
+    "image_number_cols": 12,
+    "number_nodes": [864, 864 * 8, 864 * 4, 864, 864, 576],
+    "percentage_training_images": 0.9,
+    "starting_gamma": 1e-5,
+    "starting_threshold": 1e-5,
+    "n_epochs": 500,
+    "batch_size": 600,
+    "torch_seed": random.randint(1, 1000),
+    "prefix_for_saves": prefix_for_saves,
+}
+
+matplotlib.rc("xtick", labelsize=6)
+matplotlib.rc("ytick", labelsize=6)
+
+start_time = time.time()
+
+# sample_sim = 0
+# count_gamma = 1
 
 ##################################
 ## Functions to process image data
 ##################################
 
 
-def read_from_file_to_numpy_array(filename1, filename2):
+def read_from_file_to_numpy_array(input_training_file, output_training_file):
     """Read data from multiple files into
     1) numpy array with input image with shape
             # images, # rows (24), # cols (12), 3 (object, vel x, vel y)
@@ -34,15 +65,9 @@ def read_from_file_to_numpy_array(filename1, filename2):
         numpy array with images
         numpy array with labels
     """
-    with open(
-        f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_images.pkl",
-        "rb",
-    ) as filehandler:
+    with open(input_training_file, "rb") as filehandler:
         total_input_images = np.stack(pickle.load(filehandler), 0)
-    with open(
-        f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_image_labels.pkl",
-        "rb",
-    ) as filehandler:
+    with open(output_training_file, "rb") as filehandler:
         total_output_images = np.stack(pickle.load(filehandler), 0)
 
     total_output_images = (
@@ -60,6 +85,14 @@ def convert_input_numpy_to_torch(input_numpy):
     Returns:
         _type_: _description_
     """
+    if isinstance(input_numpy, list) and isinstance(input_numpy[0], np.ndarray):
+        # array of lists, need to stack first
+        input_numpy = np.stack(input_numpy, 0)
+
+    assert isinstance(
+        input_numpy, np.ndarray
+    ), "trying to convert something that is not a numpy array"
+    assert input_numpy.ndim == 4, "numpy array must have 4 dimensions"
     output_torch = torch.tensor(input_numpy, dtype=torch.float32)
     return output_torch
 
@@ -74,7 +107,20 @@ def convert_output_torch_to_numpy_increment(output_torch):
         _type_: _description_
     """
     output2 = output_torch.detach().cpu().numpy()
-    output_numpy = np.concatenate([np.zeros((1, 24, 12, 1)), output2], 3)
+    output_numpy = np.concatenate(
+        [
+            np.zeros(
+                (
+                    1,
+                    parameters["image_number_rows"],
+                    parameters["image_number_cols"],
+                    1,
+                )
+            ),
+            output2,
+        ],
+        3,
+    )
     return output_numpy
 
 
@@ -108,27 +154,37 @@ def send_numpy_data_to_image(axis, axis_img, input_numpy, title="", increment=Fa
     Returns:
         _type_: _description_
     """
+    assert isinstance(
+        input_numpy, np.ndarray
+    ), "trying to convert something that is not a numpy array"
+    assert input_numpy.ndim == 3, "numpy array must have 3 dimensions"
+
     output_image = copy.deepcopy(input_numpy)
     # print(output_image[0:5, 0:5, 0:3])
     if increment:
         output_image[:, :, 1:3] = output_image[:, :, 1:3] * 10 + 0.5
     output_image = np.clip(output_image, 0, 1)
     axis_img.set_data(np.swapaxes(output_image, 0, 1))
-    axis.set_title(title)
+    axis.set_title(title, fontsize=6)
+    axis.set_xticks([])
+    axis.set_yticks([])
+
+
+##########################################
+## Construct animation from NN predictions
+##########################################
 
 
 def run_simulator_30_times(my_nn):
 
     starting_image = 0
-    send_numpy_data_to_image(ax[1, 0], k1_0, sample_sim[starting_image])
-    send_numpy_data_to_image(ax[2, 0], k2_0, sample_sim[starting_image + 1])
-    send_numpy_data_to_image(ax[3, 0], k3_0, sample_sim[starting_image + 2])
-    send_numpy_data_to_image(ax[4, 0], k4_0, sample_sim[starting_image + 3])
-    send_numpy_data_to_image(ax[5, 0], k5_0, sample_sim[starting_image + 4])
-    send_numpy_data_to_image(ax[6, 0], k6_0, sample_sim[starting_image + 5])
-    send_numpy_data_to_image(ax[7, 0], k7_0, sample_sim[starting_image + 6])
-    send_numpy_data_to_image(ax[8, 0], k8_0, sample_sim[starting_image + 10])
-    send_numpy_data_to_image(ax[9, 0], k9_0, sample_sim[starting_image + 20])
+    which_images = [0, 1, 2, 3, 4, 5, 6, 10, 20]
+    for i in range(len(axis_actual_images)):
+        send_numpy_data_to_image(
+            axis_actual_images[i],
+            image_actual_images[i],
+            sample_sim[starting_image + which_images[i]],
+        )
 
     predicted_output_images = [sample_sim[starting_image]]
     predicted_increments = []
@@ -149,124 +205,139 @@ def run_simulator_30_times(my_nn):
         for i in range(21)
     ]
 
-    send_numpy_data_to_image(
-        ax[1, 1], k1_1, predicted_output_images[0], f"{mses[0]:.6f}"
-    )
-    send_numpy_data_to_image(
-        ax[2, 1], k2_1, predicted_output_images[1], f"{mses[1]:.6f}"
-    )
-    send_numpy_data_to_image(
-        ax[3, 1], k3_1, predicted_output_images[2], f"{mses[2]:.6f}"
-    )
-    send_numpy_data_to_image(
-        ax[4, 1], k4_1, predicted_output_images[3], f"{mses[3]:.6f}"
-    )
-    send_numpy_data_to_image(
-        ax[5, 1], k5_1, predicted_output_images[4], f"{mses[4]:.6f}"
-    )
-    send_numpy_data_to_image(
-        ax[6, 1], k6_1, predicted_output_images[5], f"{mses[5]:.6f}"
-    )
-    send_numpy_data_to_image(
-        ax[7, 1], k7_1, predicted_output_images[6], f"{mses[6]:.6f}"
-    )
-    send_numpy_data_to_image(
-        ax[8, 1], k8_1, predicted_output_images[10], f"{mses[10]:.6f}"
-    )
-    send_numpy_data_to_image(
-        ax[9, 1], k9_1, predicted_output_images[20], f"{mses[20]:.6f}"
-    )
-
-    send_numpy_data_to_image(ax[1, 2], k1_2, predicted_increments[0], increment=True)
-    send_numpy_data_to_image(ax[2, 2], k2_2, predicted_increments[1], increment=True)
-    send_numpy_data_to_image(ax[3, 2], k3_2, predicted_increments[2], increment=True)
-    send_numpy_data_to_image(ax[4, 2], k4_2, predicted_increments[3], increment=True)
-    send_numpy_data_to_image(ax[5, 2], k5_2, predicted_increments[4], increment=True)
-    send_numpy_data_to_image(ax[6, 2], k6_2, predicted_increments[5], increment=True)
-    send_numpy_data_to_image(ax[7, 2], k7_2, predicted_increments[6], increment=True)
-    send_numpy_data_to_image(ax[8, 2], k8_2, predicted_increments[10], increment=True)
-    send_numpy_data_to_image(ax[9, 2], k9_2, predicted_increments[20], increment=True)
+    for i in range(len(axis_predicted_images)):
+        send_numpy_data_to_image(
+            axis_predicted_images[i],
+            image_predicted_images[i],
+            predicted_output_images[which_images[i]],
+            f"mse={mses[which_images[i]]:.8f}",
+        )
+        send_numpy_data_to_image(
+            axis_predicted_increments[i],
+            image_predicted_increments[i],
+            predicted_increments[which_images[i]],
+            title="increment",
+            increment=True,
+        )
 
     fig.canvas.draw()
     fig.canvas.flush_events()
-    return predicted_output_images
+    return (predicted_output_images, mses)
+
+
+###############################
+## Build all axis for the plots
+###############################
+
+fig = plt.figure(figsize=(8, 6), dpi=144)  # layout="constrained")
+gs = GridSpec(10, 4, hspace=0.5, figure=fig)
+
+# fig, ax = plt.subplots(10, 4)
+
+# images with output and prediction
+axis_actual_increment = fig.add_subplot(gs[0, 0])
+image_actual_increment = axis_actual_increment.imshow(
+    np.zeros((parameters["image_number_cols"], parameters["image_number_rows"])),
+    interpolation="nearest",
+    origin="upper",
+)
+axis_predicted_increment = fig.add_subplot(gs[0, 1])
+image_predicted_increment = axis_predicted_increment.imshow(
+    np.zeros((parameters["image_number_cols"], parameters["image_number_rows"])),
+    interpolation="nearest",
+    origin="upper",
+)
+
+# plots with losses
+axis_losses = fig.add_subplot(gs[0:4, 3])
+line_losses = axis_losses.plot(np.arange(0, 1000), np.arange(0, 1000), color="g")[0]
+axis_losses.set_yscale("log")
+axis_losses.set_ylim(1e-7, 1e-4)
+axis_losses.grid(True)
+axis_losses.set_title("loss", fontsize=8)
+
+# plots with mean-square errors
+axis_mses = fig.add_subplot(gs[5:9, 3])
+lines_mses = axis_mses.plot(np.arange(0, 1000), np.ones((1000, 21)), color="g")
+axis_mses.set_yscale("log")
+axis_mses.set_ylim(1e-7, 1e-4)
+axis_mses.grid(True)
+axis_mses.set_title("mean-square-errs 1-21 steps ahead", fontsize=7)
+
+axis_actual_images = [fig.add_subplot(gs[i, 0]) for i in range(1, 10)]
+image_actual_images = [
+    ax.imshow(
+        np.zeros((parameters["image_number_cols"], parameters["image_number_rows"])),
+        interpolation="nearest",
+        origin="upper",
+    )
+    for ax in axis_actual_images
+]
+axis_predicted_images = [fig.add_subplot(gs[i, 1]) for i in range(1, 10)]
+image_predicted_images = [
+    ax.imshow(
+        np.zeros((parameters["image_number_cols"], parameters["image_number_rows"])),
+        interpolation="nearest",
+        origin="upper",
+    )
+    for ax in axis_predicted_images
+]
+axis_predicted_increments = [fig.add_subplot(gs[i, 2]) for i in range(1, 10)]
+image_predicted_increments = [
+    ax.imshow(
+        np.zeros((parameters["image_number_cols"], parameters["image_number_rows"])),
+        interpolation="nearest",
+        origin="upper",
+    )
+    for ax in axis_predicted_increments
+]
 
 
 with open(
-    f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/Sample_sim/RGB_images_3619.pkl",
+    parameters["sample_simulation_file"],
     "rb",
 ) as filehandler:
     sample_sim = pickle.load(filehandler)
 
 count = 0
-path = "C:/Users/ruihe/GitHub/Physics-based-Machine-learning-Fluid-sim/Training_data_pickle"
+# path = "C:/Users/ruihe/GitHub/Physics-based-Machine-learning-Fluid-sim/Training_data_pickle"
 
-gamma = 1e-05
-threshold = 1e-5
+gamma = parameters["starting_gamma"]
+threshold = parameters["starting_threshold"]
 
-torch.manual_seed(random.randint(1, 1000))
+torch.manual_seed(parameters["torch_seed"])
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # device= torch.device("cpu")
 print("Using device:", device)
-
-fig, ax = plt.subplots(10, 3)
-
-k3 = ax[0, 0].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k2 = ax[0, 1].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k1 = ax[0, 2].plot(np.arange(0, 1000), np.arange(0, 1000), color="g")[0]
-
-k1_0 = ax[1, 0].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k1_1 = ax[1, 1].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k1_2 = ax[1, 2].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-
-k2_0 = ax[2, 0].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k2_1 = ax[2, 1].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k2_2 = ax[2, 2].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-
-k3_0 = ax[3, 0].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k3_1 = ax[3, 1].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k3_2 = ax[3, 2].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-
-k4_0 = ax[4, 0].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k4_1 = ax[4, 1].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k4_2 = ax[4, 2].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-
-k5_0 = ax[5, 0].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k5_1 = ax[5, 1].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k5_2 = ax[5, 2].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-
-k6_0 = ax[6, 0].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k6_1 = ax[6, 1].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k6_2 = ax[6, 2].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-
-k7_0 = ax[7, 0].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k7_1 = ax[7, 1].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k7_2 = ax[7, 2].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-
-k8_0 = ax[8, 0].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k8_1 = ax[8, 1].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k8_2 = ax[8, 2].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-
-k9_0 = ax[9, 0].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k9_2 = ax[9, 2].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-k9_1 = ax[9, 1].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
-
-ax[0, 2].set_yscale("log")
-ax[0, 2].set_ylim(1e-7, 1e-4)
-ax[0, 2].grid(True)
 
 
 class Net_NoConv(nn.Module):
     def __init__(self):
         super(Net_NoConv, self).__init__()
         # First fully connected layer
-        self.fc1 = nn.Linear(in_features=(int)(864), out_features=(int)(864 * 8))
+        self.fc1 = nn.Linear(
+            in_features=parameters["number_nodes"][0],
+            out_features=parameters["number_nodes"][1],
+        )
         # Second fully connected layer
-        self.fc2 = nn.Linear(in_features=(int)(864 * 8), out_features=(int)(864 * 4))
+        self.fc2 = nn.Linear(
+            in_features=parameters["number_nodes"][1],
+            out_features=parameters["number_nodes"][2],
+        )
         # Fourth fully connected layer
-        self.fc3 = nn.Linear((int)(864 * 4), 864)
-        self.fc4 = nn.Linear((int)(864), 864)
-        self.fc5 = nn.Linear((int)(864), 576)
+        self.fc3 = nn.Linear(
+            in_features=parameters["number_nodes"][2],
+            out_features=parameters["number_nodes"][3],
+        )
+        self.fc4 = nn.Linear(
+            in_features=parameters["number_nodes"][3],
+            out_features=parameters["number_nodes"][4],
+        )
+        self.fc5 = nn.Linear(
+            in_features=parameters["number_nodes"][4],
+            out_features=parameters["number_nodes"][5],
+        )
+
         self.activation1 = nn.PReLU()  ### USE ACTIVATION WITHOUT VANISHING GRADIENT
         self.activation2 = nn.PReLU()  ### USE ACTIVATION WITHOUT VANISHING GRADIENT
         self.activation3 = nn.PReLU()  ### USE ACTIVATION WITHOUT VANISHING GRADIENT
@@ -290,17 +361,27 @@ class Net_NoConv(nn.Module):
 
         # Apply softmax to x
         output = x
-        output = torch.reshape(output, (len(output), 24, 12, 2))
+        output = torch.reshape(
+            output,
+            (
+                len(output),
+                parameters["image_number_rows"],
+                parameters["image_number_cols"],
+                2,
+            ),
+        )
         # output = F.log_softmax(x, dim=1)
         return output
 
 
 (total_input_images, total_output_images) = read_from_file_to_numpy_array(
-    f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_images.pkl",
-    f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_image_labels.pkl",
+    parameters["input_training_file"],
+    parameters["output_training_file"],
 )
 
-number_training = (int)(9 * len(total_input_images) / 10)
+number_training = (int)(
+    parameters["percentage_training_images"] * len(total_input_images)
+)
 
 input_images_training = total_input_images[:number_training]
 input_images_test = total_input_images[number_training:]
@@ -332,16 +413,16 @@ with open(
 my_nn.to(device)  ### SEND MODEL TO GPU
 print(my_nn)
 
-# random_data = torch.rand((1, 3, 24, 12))
+# random_data = torch.rand((1, 3, parameters["image_number_rows"], parameters["image_number_cols"]))
 # result = my_nn(random_data)
 
 # output_Img = np.concatenate(
-#     (np.zeros((24, 12, 1)), result.detach().numpy().reshape(24, 12, 2)), axis=2
+#     (np.zeros((parameters["image_number_rows"], parameters["image_number_cols"], 1)), result.detach().numpy().reshape(parameters["image_number_rows"], parameters["image_number_cols"], 2)), axis=2
 # )
-# random_data_IMG = random_data.numpy().reshape(24, 12, 3)
+# random_data_IMG = random_data.numpy().reshape(parameters["image_number_rows"], parameters["image_number_cols"], 3)
 
-n_epochs = 400  # number of epochs to run
-batch_size = 600  # size of each batch
+n_epochs = parameters["n_epochs"]  # number of epochs to run
+batch_size = parameters["batch_size"]  # size of each batch
 batch_start = torch.arange(0, len(input_images_training), batch_size)
 
 
@@ -364,6 +445,7 @@ best_nn = None
 fig.canvas.draw()
 plt.show(block=False)
 losses = []
+mses = []
 for epoch in range(n_epochs):
     arranged_arr = np.arange(len(input_tensors_training))
     np.random.shuffle(arranged_arr)
@@ -378,60 +460,91 @@ for epoch in range(n_epochs):
     my_nn.train()
     for start in batch_start:
         # take a batch
-        X_batch = convert_input_numpy_to_torch(
+        input_batch = convert_input_numpy_to_torch(
             randomized_train[start : start + batch_size, :, :, :]
         )
-        y_batch = convert_input_numpy_to_torch(
+        output_batch = convert_input_numpy_to_torch(
             randomized_labels[start : start + batch_size, :, :, :]
         )
         # forward pass in GPU
-        y_pred = my_nn(X_batch.to(device))  ### SEND DATA TO GPU
+        output_batch_prediction = my_nn(input_batch.to(device))  ### SEND DATA TO GPU
 
-        loss = loss_fn(y_pred, y_batch.to(device))  ### SEND DATA TO GPU
-        y_pred = y_pred.cpu()  ### BRING PREDICTION TOP CPU FOR PLOT
+        loss = loss_fn(
+            output_batch_prediction, output_batch.to(device)
+        )  ### SEND DATA TO GPU
+        output_batch_prediction = (
+            output_batch_prediction.cpu()
+        )  ### BRING PREDICTION TOP CPU FOR PLOT
         losses.append(loss.cpu().detach())  ### BRING LOSS TO CPU FOR PLOT
 
         if ((int)(start / batch_size)) % 100 == 1:  ### ONLY SHOW 1 OUT OF 100
 
             print(f"epoch={epoch} : loss={loss:.2e} : gamma={gamma:.2e}")
             output_Img = np.concatenate(
-                (np.zeros((24, 12, 1)), y_pred[0].detach().numpy().reshape(24, 12, 2)),
+                (
+                    np.zeros(
+                        (
+                            parameters["image_number_rows"],
+                            parameters["image_number_cols"],
+                            1,
+                        )
+                    ),
+                    output_batch_prediction[0]
+                    .detach()
+                    .numpy()
+                    .reshape(
+                        parameters["image_number_rows"],
+                        parameters["image_number_cols"],
+                        2,
+                    ),
+                ),
                 axis=2,
             )
 
-            y_pred_test = my_nn(input_tensors_test[0:1].to(device)).cpu()
+            output_test_prediction = my_nn(input_tensors_test[0:1].to(device)).cpu()
 
             send_numpy_data_to_image(
-                ax[0, 1],
-                k2,
-                convert_output_torch_to_numpy_increment(y_pred_test[0:1])[0],
+                axis_predicted_increment,
+                image_predicted_increment,
+                convert_output_torch_to_numpy_increment(output_test_prediction[0:1])[0],
                 "predicted increment",
                 increment=True,
             )
 
             send_numpy_data_to_image(
-                ax[0, 0],
-                k3,
+                axis_actual_increment,
+                image_actual_increment,
                 convert_output_torch_to_numpy_increment(output_tensors_test[0:1])[0],
                 "actual increment",
                 increment=True,
             )
 
-            lag = 10000
             if True:
-                k1.set_xdata(np.arange(0, len(losses)))
-                k1.set_ydata(np.array(losses))
-                ax[0, 2].set_ylim(np.min(losses), 1e-5)
-                ax[0, 2].set_xlim(0, len(losses))
+                # plot losses
+                line_losses.set_xdata(np.arange(0, len(losses)))
+                line_losses.set_ydata(np.array(losses))
+                axis_losses.set_ylim(np.min(losses), 2e-6)
+                axis_losses.set_xlim(0, len(losses))
+                # plot mses
+                if mses:
+                    x = np.arange(0, len(mses))
+                    yy = np.stack(mses, 0)
+                    for i, line in enumerate(lines_mses):
+                        line.set_xdata(x)
+                        line.set_ydata(yy[:, i])
+                    # 1st mse is zero, so do not include in minimum
+                    axis_mses.set_ylim(np.min(yy[:, 1:]), 1e-3)
+                    axis_mses.set_xlim(0, len(mses))
             else:
-                k1.set_xdata(np.arange(0, lag))
-                k1.set_ydata(np.array(losses[len(losses) - lag :]))
-                ax[0, 2].set_ylim(
+                lag = 10000
+                line_losses.set_xdata(np.arange(0, lag))
+                line_losses.set_ydata(np.array(losses[len(losses) - lag :]))
+                axis_losses.set_ylim(
                     np.min(losses[len(losses) - lag :]),
                     np.max(losses[len(losses) - lag :]),
                 )
 
-            # ax[0, 2].set_xlim(0, lag)
+            # axis_losses.set_xlim(0, lag)
 
             fig.canvas.draw()
             fig.canvas.flush_events()
@@ -451,28 +564,50 @@ for epoch in range(n_epochs):
         # g["lr"] = gamma
     # evaluate accuracy at end of each epoch
     my_nn.eval()
-    y_pred = my_nn(input_tensors_test.to(device))  ### SEND DATA TO GPU
-    mape = loss_fn(y_pred, output_tensors_test.to(device))  ### SEND DATA TO GPU
+    output_batch_prediction = my_nn(input_tensors_test.to(device))  ### SEND DATA TO GPU
+    mape = loss_fn(
+        output_batch_prediction, output_tensors_test.to(device)
+    )  ### SEND DATA TO GPU
     mape = mape.cpu()  ### BRING BACK TO CPU
     if mape < best_mape:
         best_mape = mape
         print(f"    MAPE: {mape:.2e}")
         best_nn = copy.deepcopy(my_nn).cpu()
         best_weights = copy.deepcopy(my_nn.state_dict())
-    run_simulator_30_times(copy.deepcopy(my_nn).cpu())
+    (predicted_images, mse) = run_simulator_30_times(copy.deepcopy(my_nn).cpu())
+    mses.append(mse)
 
     # rgb = np
 
-plt.savefig("fugure after training with staring image of 10")
+print(f"final MAPE: {mape:.2e}")
 
+# save as png and pdf
+plt.savefig(parameters["prefix_for_saves"] + "_figure.png")
+plt.savefig(parameters["prefix_for_saves"] + "_figure.pdf")
 
 # restore model and return best accuracy
 my_nn.load_state_dict(best_weights)
 
+# add final results to json file
+loss = float(loss.cpu().detach())
+mape = float(mape.cpu().detach())
+best_mape = float(best_mape.cpu().detach())
+parameters["results"] = {
+    "final_loss": loss,
+    "final_mape": mape,
+    "best_mape": best_mape,
+    "final_gamma": gamma,
+    "final_mses": mse,
+    "training_time_sec": time.time() - start_time,
+}
+
 with open(
-    f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/Sample_sim/Best_weights{random.randint(0,10000)}.pkl",
+    parameters["prefix_for_saves"] + "_parameters.json", "w", encoding="utf-8"
+) as file:
+    json.dump(parameters, file, indent=4)
+
+with open(
+    parameters["prefix_for_saves"] + "_best_weights.pkl",
     "wb",
 ) as file:
     pickle.dump((best_weights), file)
-
-print(f"final MAPE: {mape:.2e}")
