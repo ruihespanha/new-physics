@@ -210,7 +210,7 @@ def run_simulator_30_times(my_nn):
             axis_predicted_images[i],
             image_predicted_images[i],
             predicted_output_images[which_images[i]],
-            f"mse={mses[which_images[i]]:.8f}",
+            f"mse[{which_images[i]}]={mses[which_images[i]]:.7f}",
         )
         send_numpy_data_to_image(
             axis_predicted_increments[i],
@@ -262,7 +262,7 @@ lines_mses = axis_mses.plot(np.arange(0, 1000), np.ones((1000, 21)), color="g")
 axis_mses.set_yscale("log")
 axis_mses.set_ylim(1e-7, 1e-4)
 axis_mses.grid(True)
-axis_mses.set_title("mean-square-errs 1-21 steps ahead", fontsize=7)
+axis_mses.set_title("mean-square-errs 1-20 steps ahead", fontsize=7)
 
 axis_actual_images = [fig.add_subplot(gs[i, 0]) for i in range(1, 10)]
 image_actual_images = [
@@ -534,7 +534,7 @@ for epoch in range(n_epochs):
                         line.set_ydata(yy[:, i])
                     # 1st mse is zero, so do not include in minimum
                     axis_mses.set_ylim(np.min(yy[:, 1:]), 1e-3)
-                    axis_mses.set_xlim(0, len(mses))
+                    axis_mses.set_xlim(0, len(mses) - 1)
             else:
                 lag = 10000
                 line_losses.set_xdata(np.arange(0, lag))
