@@ -14,86 +14,182 @@ import pickle
 sample_sim = 0
 count_gamma = 1
 
-
-def convert_result_to_torch_format(result):
-    # result = result.reshape((1, 24, 12, 3))
-    temp = np.zeros((1, 24, 12, 3))
-    temp[0] = result
-    result = torch.tensor(temp, dtype=torch.float32)
-    return result
+##################################
+## Functions to process image data
+##################################
 
 
-def convert_nn_result_to_numpy(result):
+def read_from_file_to_numpy_array(filename1, filename2):
+    """Read data from multiple files into
+    1) numpy array with input image with shape
+            # images, # rows (24), # cols (12), 3 (object, vel x, vel y)
+    2) numpy array with output image with shape
+            # images, # rows (24), # cols (12), 2 (delta vel x, delta vel y)
 
-    temp = np.concatenate(
-        (np.zeros((24, 12, 1)), result.detach().numpy().reshape(24, 12, 2)),
-        axis=2,
+    Args:
+        filename1 (_type_): _description_
+        filename2 (_type_): _description_
+
+    Returns:
+        numpy array with images
+        numpy array with labels
+    """
+    with open(
+        f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_images.pkl",
+        "rb",
+    ) as filehandler:
+        total_input_images = np.stack(pickle.load(filehandler), 0)
+    with open(
+        f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_image_labels.pkl",
+        "rb",
+    ) as filehandler:
+        total_output_images = np.stack(pickle.load(filehandler), 0)
+
+    total_output_images = (
+        total_output_images[:, :, :, 1:3] - total_input_images[:, :, :, 1:3]
     )
-    result = temp
-    return result
+    return (total_input_images, total_output_images)
+
+
+def convert_input_numpy_to_torch(input_numpy):
+    """Convert input numpy array with shape
+        # images, # rows (24), # cols (12), 3 (object, vel x, vel y)
+    into torch input array wiuth shape
+        # images, # rows (24), # cols (12), 3 (object, vel x, vel y)
+
+    Returns:
+        _type_: _description_
+    """
+    output_torch = torch.tensor(input_numpy, dtype=torch.float32)
+    return output_torch
+
+
+def convert_output_torch_to_numpy_increment(output_torch):
+    """Convert torch output array with shape
+        # images, # rows (24), # cols (12), 2 (vel x, vel y)
+    into numpy input array with shape
+        # images, # rows (24), # cols (12), 3 (zeros, vel x, vel y)
+
+    Returns:
+        _type_: _description_
+    """
+    output2 = output_torch.detach().cpu().numpy()
+    output_numpy = np.concatenate([np.zeros((1, 24, 12, 1)), output2], 3)
+    return output_numpy
+
+
+def accumulate_numpy_data(previous_data, increment):
+    """Accumulate image with shape
+        # images, # rows (24), # cols (12), 3 (object, vel x, vel y)
+    with increment with shape
+        # images, # rows (24), # cols (12), 3 (zeros, vel x, vel y)
+    to produce next image with shape
+        # images, # rows (24), # cols (12), 3 (object, vel x, vel y)
+
+    Args:
+        previous_data (_type_): _description_
+        increment (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    return previous_data + increment
+
+
+def send_numpy_data_to_image(axis, axis_img, input_numpy, title="", increment=False):
+    """Convert numpy data with shape
+        # rows (24), # cols (12), 3 (object, vel x, vel y)
+    into an RGB image with shape
+        # rows (12), # cols (24), 3 (object, vel x, vel y ; cliped to [0,1])
+
+    Args:
+        input_numpy (_type_): _description_
+
+    Returns:
+        _type_: _description_
+    """
+    output_image = copy.deepcopy(input_numpy)
+    # print(output_image[0:5, 0:5, 0:3])
+    if increment:
+        output_image[:, :, 1:3] = output_image[:, :, 1:3] * 10 + 0.5
+    output_image = np.clip(output_image, 0, 1)
+    axis_img.set_data(np.swapaxes(output_image, 0, 1))
+    axis.set_title(title)
 
 
 def run_simulator_30_times(my_nn):
-    # print(f"X_test shape: {X_test[0].shape}")
 
     starting_image = 0
-    print(np.swapaxes(sample_sim[starting_image], 0, 1))
-    k1_0.set_data(np.swapaxes(sample_sim[starting_image], 0, 1))
-    k2_0.set_data(np.swapaxes(sample_sim[starting_image + 1], 0, 1))
-    k3_0.set_data(np.swapaxes(sample_sim[starting_image + 2], 0, 1))
-    k4_0.set_data(np.swapaxes(sample_sim[starting_image + 3], 0, 1))
-    k5_0.set_data(np.swapaxes(sample_sim[starting_image + 4], 0, 1))
-    k6_0.set_data(np.swapaxes(sample_sim[starting_image + 5], 0, 1))
-    k7_0.set_data(np.swapaxes(sample_sim[starting_image + 6], 0, 1))
-    k8_0.set_data(np.swapaxes(sample_sim[starting_image + 10], 0, 1))
-    k9_0.set_data(np.swapaxes(sample_sim[starting_image + 20], 0, 1))
-    temp_y_pred_addative = [np.swapaxes(X_test[0].detach().numpy(), 0, 2)]
-    temp_y_pred = []
+    send_numpy_data_to_image(ax[1, 0], k1_0, sample_sim[starting_image])
+    send_numpy_data_to_image(ax[2, 0], k2_0, sample_sim[starting_image + 1])
+    send_numpy_data_to_image(ax[3, 0], k3_0, sample_sim[starting_image + 2])
+    send_numpy_data_to_image(ax[4, 0], k4_0, sample_sim[starting_image + 3])
+    send_numpy_data_to_image(ax[5, 0], k5_0, sample_sim[starting_image + 4])
+    send_numpy_data_to_image(ax[6, 0], k6_0, sample_sim[starting_image + 5])
+    send_numpy_data_to_image(ax[7, 0], k7_0, sample_sim[starting_image + 6])
+    send_numpy_data_to_image(ax[8, 0], k8_0, sample_sim[starting_image + 10])
+    send_numpy_data_to_image(ax[9, 0], k9_0, sample_sim[starting_image + 20])
+
+    predicted_output_images = [sample_sim[starting_image]]
+    predicted_increments = []
     for i in range(21):
-        nn_temp_result = my_nn(convert_result_to_torch_format(temp_y_pred_addative[i]))
-        # print(f"X_test shape: {X_test[0].shape}")
-        nn_result = convert_nn_result_to_numpy(nn_temp_result)
-        temp_y_pred_addative.append(temp_y_pred_addative[i] + nn_result)
-        temp_y_pred.append(copy.deepcopy(nn_result))
+        nn_output = my_nn(
+            convert_input_numpy_to_torch(predicted_output_images[i : i + 1])
+        )
+        nn_output_np = copy.deepcopy(
+            convert_output_torch_to_numpy_increment(nn_output)[0]
+        )
+
+        predicted_increments.append(nn_output_np)
+        predicted_output_images.append(
+            accumulate_numpy_data(predicted_output_images[i], nn_output_np)
+        )
     mses = [
-        np.mean(np.square(temp_y_pred_addative[i] - sample_sim[starting_image + i]))
+        np.mean(np.square(predicted_output_images[i] - sample_sim[starting_image + i]))
         for i in range(21)
     ]
 
-    k0.set_data(np.swapaxes(np.swapaxes(X_test[0].detach().numpy(), 0, 2), 0, 1))
+    send_numpy_data_to_image(
+        ax[1, 1], k1_1, predicted_output_images[0], f"{mses[0]:.6f}"
+    )
+    send_numpy_data_to_image(
+        ax[2, 1], k2_1, predicted_output_images[1], f"{mses[1]:.6f}"
+    )
+    send_numpy_data_to_image(
+        ax[3, 1], k3_1, predicted_output_images[2], f"{mses[2]:.6f}"
+    )
+    send_numpy_data_to_image(
+        ax[4, 1], k4_1, predicted_output_images[3], f"{mses[3]:.6f}"
+    )
+    send_numpy_data_to_image(
+        ax[5, 1], k5_1, predicted_output_images[4], f"{mses[4]:.6f}"
+    )
+    send_numpy_data_to_image(
+        ax[6, 1], k6_1, predicted_output_images[5], f"{mses[5]:.6f}"
+    )
+    send_numpy_data_to_image(
+        ax[7, 1], k7_1, predicted_output_images[6], f"{mses[6]:.6f}"
+    )
+    send_numpy_data_to_image(
+        ax[8, 1], k8_1, predicted_output_images[10], f"{mses[10]:.6f}"
+    )
+    send_numpy_data_to_image(
+        ax[9, 1], k9_1, predicted_output_images[20], f"{mses[20]:.6f}"
+    )
 
-    k1_1.set_data(np.clip(np.swapaxes(temp_y_pred_addative[0], 0, 1), 0, 1))
-    ax[1, 1].set_title(f"{mses[0]:.6f}")
-    k2_1.set_data(np.clip(np.swapaxes(temp_y_pred_addative[1], 0, 1), 0, 1))
-    ax[2, 1].set_title(f"{mses[1]:.6f}")
-    k3_1.set_data(np.clip(np.swapaxes(temp_y_pred_addative[2], 0, 1), 0, 1))
-    ax[3, 1].set_title(f"{mses[2]:.6f}")
-    k4_1.set_data(np.clip(np.swapaxes(temp_y_pred_addative[3], 0, 1), 0, 1))
-    ax[4, 1].set_title(f"{mses[3]:.6f}")
-    k5_1.set_data(np.clip(np.swapaxes(temp_y_pred_addative[4], 0, 1), 0, 1))
-    ax[5, 1].set_title(f"{mses[4]:.6f}")
-    k6_1.set_data(np.clip(np.swapaxes(temp_y_pred_addative[5], 0, 1), 0, 1))
-    ax[6, 1].set_title(f"{mses[5]:.6f}")
-    k7_1.set_data(np.clip(np.swapaxes(temp_y_pred_addative[6], 0, 1), 0, 1))
-    ax[7, 1].set_title(f"{mses[6]:.6f}")
-    k8_1.set_data(np.clip(np.swapaxes(temp_y_pred_addative[10], 0, 1), 0, 1))
-    ax[8, 1].set_title(f"{mses[10]:.6f}")
-    k9_1.set_data(np.clip(np.swapaxes(temp_y_pred_addative[20], 0, 1), 0, 1))
-    ax[9, 1].set_title(f"{mses[20]:.6f}")
-
-    k1_2.set_data(np.clip(np.swapaxes((temp_y_pred[0] * 10) + 0.5, 0, 1), 0, 1))
-    k2_2.set_data(np.clip(np.swapaxes((temp_y_pred[1] * 10) + 0.5, 0, 1), 0, 1))
-    k3_2.set_data(np.clip(np.swapaxes((temp_y_pred[2] * 10) + 0.5, 0, 1), 0, 1))
-    k4_2.set_data(np.clip(np.swapaxes((temp_y_pred[3] * 10) + 0.5, 0, 1), 0, 1))
-    k5_2.set_data(np.clip(np.swapaxes((temp_y_pred[4] * 10) + 0.5, 0, 1), 0, 1))
-    k6_2.set_data(np.clip(np.swapaxes((temp_y_pred[5] * 10) + 0.5, 0, 1), 0, 1))
-    k7_2.set_data(np.clip(np.swapaxes((temp_y_pred[6] * 10) + 0.5, 0, 1), 0, 1))
-    k8_2.set_data(np.clip(np.swapaxes((temp_y_pred[10] * 10) + 0.5, 0, 1), 0, 1))
-    k9_2.set_data(np.clip(np.swapaxes((temp_y_pred[20] * 10) + 0.5, 0, 1), 0, 1))
+    send_numpy_data_to_image(ax[1, 2], k1_2, predicted_increments[0], increment=True)
+    send_numpy_data_to_image(ax[2, 2], k2_2, predicted_increments[1], increment=True)
+    send_numpy_data_to_image(ax[3, 2], k3_2, predicted_increments[2], increment=True)
+    send_numpy_data_to_image(ax[4, 2], k4_2, predicted_increments[3], increment=True)
+    send_numpy_data_to_image(ax[5, 2], k5_2, predicted_increments[4], increment=True)
+    send_numpy_data_to_image(ax[6, 2], k6_2, predicted_increments[5], increment=True)
+    send_numpy_data_to_image(ax[7, 2], k7_2, predicted_increments[6], increment=True)
+    send_numpy_data_to_image(ax[8, 2], k8_2, predicted_increments[10], increment=True)
+    send_numpy_data_to_image(ax[9, 2], k9_2, predicted_increments[20], increment=True)
 
     fig.canvas.draw()
     fig.canvas.flush_events()
-    return temp_y_pred_addative
+    return predicted_output_images
 
 
 with open(
@@ -105,7 +201,7 @@ with open(
 count = 0
 path = "C:/Users/ruihe/GitHub/Physics-based-Machine-learning-Fluid-sim/Training_data_pickle"
 
-gamma = 0.00003
+gamma = 1e-05
 threshold = 1e-5
 
 torch.manual_seed(random.randint(1, 1000))
@@ -113,12 +209,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # device= torch.device("cpu")
 print("Using device:", device)
 
-fig, ax = plt.subplots(11, 3)
+fig, ax = plt.subplots(10, 3)
 
 k3 = ax[0, 0].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
 k2 = ax[0, 1].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
 k1 = ax[0, 2].plot(np.arange(0, 1000), np.arange(0, 1000), color="g")[0]
-k0 = ax[10, 1].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
 
 k1_0 = ax[1, 0].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
 k1_1 = ax[1, 1].imshow(np.zeros((12, 24)), interpolation="nearest", origin="upper")
@@ -160,108 +255,6 @@ ax[0, 2].set_yscale("log")
 ax[0, 2].set_ylim(1e-7, 1e-4)
 ax[0, 2].grid(True)
 
-# total_images, total_image_labels = im.ImageLoaderPKL(path)  # 1000 trials
-
-# with open(
-#     f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_images.pkl",
-#     "wb",
-# ) as file:
-#     pickle.dump(total_images, file)
-
-# with open(
-#     f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_image_labels.pkl",
-#     "wb",
-# ) as file:
-#     pickle.dump(total_image_labels, file)
-
-with open(
-    f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_images.pkl",
-    "rb",
-) as filehandler:
-    total_images = pickle.load(filehandler)
-with open(
-    f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_image_labels.pkl",
-    "rb",
-) as filehandler:
-    total_image_labels = pickle.load(filehandler)
-
-total_images = np.swapaxes(total_images, 1, 3)
-total_image_labels = np.swapaxes(total_image_labels, 1, 3)
-total_image_labels = total_image_labels - total_images
-
-images = np.stack(total_images[: (int)(9 * len(total_images) / 10)], 0)
-image_test = np.stack(total_images[(int)(9 * len(total_images) / 10) :], 0)
-
-image_labels = np.stack(total_image_labels[: (int)(9 * len(total_images) / 10)], 0)
-image_labels = image_labels[:, 1:3, :, :]
-image_labels_test = np.stack(total_image_labels[(int)(9 * len(total_images) / 10) :], 0)
-image_labels_test = image_labels_test[:, 1:3, :, :]
-
-print(
-    f"{images.shape} : {image_test.shape} : {image_labels.shape} : {image_labels_test.shape}"
-)
-
-# Pytorching data
-X_train = torch.tensor(images, dtype=torch.float32)
-y_train = torch.tensor(image_labels, dtype=torch.float32)
-X_test = torch.tensor(image_test, dtype=torch.float32)
-y_test = torch.tensor(image_labels_test, dtype=torch.float32)
-
-
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        # First 2D convolutional layer, taking in 3 input channels (RGB),
-        # outputting 32 convolutional features, with a square kernel size of 7
-        self.conv1 = nn.Conv2d(
-            in_channels=3, out_channels=6, kernel_size=3, stride=1, padding=1
-        )
-        # Second 2D convolutional layer, taking in the 64 input layers,
-        # outputting 64 convolutional features, with a square kernel size of 3
-        self.conv2 = nn.Conv2d(
-            in_channels=6,
-            out_channels=12,
-            kernel_size=5,
-            stride=1,
-            padding=2,
-        )
-        # First fully connected layer
-        self.fc1 = nn.Linear(in_features=(int)(3456), out_features=(int)(3456))
-        # Second fully connected layer that outputs our 10 labels
-        self.fc2 = nn.Linear(in_features=(int)(3456), out_features=(int)(864))
-        self.fc3 = nn.Linear((int)(864), 576)
-        self.activation = nn.PReLU()  ### USE ACTIVATION WITHOUT VANISHING GRADIENT
-
-    # x represents our data
-    def forward(self, x):
-        # Pass data through conv1
-        x = self.conv1(x)
-        # Use the rectified-linear activation function over x
-        # x = F.softplus(x)
-        x = self.activation(x)  ### USE ACTIVATION WITHOUT VANISHING GRADIENT
-
-        x = self.conv2(x)
-        # x = F.softplus(x)
-        x = self.activation(x)  ### USE ACTIVATION WITHOUT VANISHING GRADIENT
-
-        # Flatten x with start_dim=1
-        x = torch.flatten(x, 1)
-        # Pass data through ``fc1``
-        x = self.fc1(x)
-        # x = F.softplus(x)
-        x = self.activation(x)  ### USE ACTIVATION WITHOUT VANISHING GRADIENT
-        x = self.fc2(x)
-        x = self.activation(x)  ### USE ACTIVATION WITHOUT VANISHING GRADIENT
-        # x = F.softplus(x)
-        x = self.fc3(x)  ### NO ACTIVATION IN LAST LAYER
-        # x = F.softplus(x)
-
-        # Apply softmax to x
-        output = x
-        output = torch.reshape(output, (len(output), 2, 12, 24))
-        # output = F.log_softmax(x, dim=1)
-        return output
-
 
 class Net_NoConv(nn.Module):
     def __init__(self):
@@ -297,12 +290,45 @@ class Net_NoConv(nn.Module):
 
         # Apply softmax to x
         output = x
-        output = torch.reshape(output, (len(output), 2, 12, 24))
+        output = torch.reshape(output, (len(output), 24, 12, 2))
         # output = F.log_softmax(x, dim=1)
         return output
 
 
+(total_input_images, total_output_images) = read_from_file_to_numpy_array(
+    f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_images.pkl",
+    f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_image_labels.pkl",
+)
+
+number_training = (int)(9 * len(total_input_images) / 10)
+
+input_images_training = total_input_images[:number_training]
+input_images_test = total_input_images[number_training:]
+
+output_images_training = total_output_images[:number_training]
+output_images_test = total_output_images[number_training:]
+
+print(
+    f"input_images_training={input_images_training.shape}, output_images_training={output_images_training.shape}"
+)
+print(
+    f"input_images_test={input_images_test.shape} : output_images_test={output_images_test.shape}"
+)
+
+# Pytorching data
+input_tensors_training = convert_input_numpy_to_torch(input_images_training)
+output_tensors_training = convert_input_numpy_to_torch(output_images_training)
+input_tensors_test = convert_input_numpy_to_torch(input_images_test)
+output_tensors_test = convert_input_numpy_to_torch(output_images_test)
+
 my_nn = Net_NoConv()
+with open(
+    f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/Sample_sim/Best_weights7547.pkl",
+    "rb",
+) as filehandler:
+    my_nn.load_state_dict(pickle.load(filehandler))
+
+
 my_nn.to(device)  ### SEND MODEL TO GPU
 print(my_nn)
 
@@ -314,11 +340,9 @@ print(my_nn)
 # )
 # random_data_IMG = random_data.numpy().reshape(24, 12, 3)
 
-# print(np.sum(np.absolute(random_data_IMG - output_Img)))
-
-n_epochs = 300  # number of epochs to run
+n_epochs = 400  # number of epochs to run
 batch_size = 600  # size of each batch
-batch_start = torch.arange(0, len(images), batch_size)
+batch_start = torch.arange(0, len(input_images_training), batch_size)
 
 
 loss_fn = nn.MSELoss()
@@ -341,23 +365,28 @@ fig.canvas.draw()
 plt.show(block=False)
 losses = []
 for epoch in range(n_epochs):
-    arranged_arr = np.arange(len(X_train))
+    arranged_arr = np.arange(len(input_tensors_training))
     np.random.shuffle(arranged_arr)
-    randomized_train = [-1] * len(X_train)
-    randomized_labels = [-1] * len(X_train)
-    for i in range(len(X_train)):
-        randomized_train[i] = X_train.detach()[arranged_arr[i]]
-        randomized_labels[i] = y_train.detach()[arranged_arr[i]]
+    randomized_train = [-1] * len(input_tensors_training)
+    randomized_labels = [-1] * len(input_tensors_training)
+    for i in range(len(input_tensors_training)):
+        randomized_train[i] = input_tensors_training.detach()[arranged_arr[i]]
+        randomized_labels[i] = output_tensors_training.detach()[arranged_arr[i]]
     randomized_train = np.array(randomized_train)
     randomized_labels = np.array(randomized_labels)
 
     my_nn.train()
     for start in batch_start:
         # take a batch
-        X_batch = torch.tensor(randomized_train[start : start + batch_size, :, :, :])
-        y_batch = torch.tensor(randomized_labels[start : start + batch_size, :, :, :])
+        X_batch = convert_input_numpy_to_torch(
+            randomized_train[start : start + batch_size, :, :, :]
+        )
+        y_batch = convert_input_numpy_to_torch(
+            randomized_labels[start : start + batch_size, :, :, :]
+        )
         # forward pass in GPU
         y_pred = my_nn(X_batch.to(device))  ### SEND DATA TO GPU
+
         loss = loss_fn(y_pred, y_batch.to(device))  ### SEND DATA TO GPU
         y_pred = y_pred.cpu()  ### BRING PREDICTION TOP CPU FOR PLOT
         losses.append(loss.cpu().detach())  ### BRING LOSS TO CPU FOR PLOT
@@ -370,32 +399,29 @@ for epoch in range(n_epochs):
                 axis=2,
             )
 
-            y_pred_test = my_nn(X_test.to(device)).cpu()
-            rgb = np.zeros((12, 24, 3))
-            rgb[:, :, 1] = np.clip(
-                y_pred_test[0].detach().numpy()[0, :, :] * 10 + 0.5, 0, 1
-            )
-            rgb[:, :, 2] = np.clip(
-                y_pred_test[0].detach().numpy()[1, :, :] * 10 + 0.5, 0, 1
-            )
-            # rgb = np.zeros((12, 24, 3))
-            # rgb[:, :, 1] = np.clip(X_batch[0].detach().numpy()[1, :, :], 0, 1)
-            # rgb[:, :, 2] = np.clip(X_batch[0].detach().numpy()[2, :, :], 0, 1)
+            y_pred_test = my_nn(input_tensors_test[0:1].to(device)).cpu()
 
-            k2.set_data(rgb)
-            rgb = np.zeros((12, 24, 3))
-            rgb[:, :, 1] = np.clip(y_test[0].detach().numpy()[0, :, :] * 10 + 0.5, 0, 1)
-            rgb[:, :, 2] = np.clip(y_test[0].detach().numpy()[1, :, :] * 10 + 0.5, 0, 1)
+            send_numpy_data_to_image(
+                ax[0, 1],
+                k2,
+                convert_output_torch_to_numpy_increment(y_pred_test[0:1])[0],
+                "predicted increment",
+                increment=True,
+            )
 
-            k3.set_data(rgb)
-            # k3.set_data(
-            #     np.swapaxes(np.swapaxes(X_test[0].detach().numpy(), 0, 2), 0, 1)
-            # )
+            send_numpy_data_to_image(
+                ax[0, 0],
+                k3,
+                convert_output_torch_to_numpy_increment(output_tensors_test[0:1])[0],
+                "actual increment",
+                increment=True,
+            )
+
             lag = 10000
             if True:
                 k1.set_xdata(np.arange(0, len(losses)))
                 k1.set_ydata(np.array(losses))
-                ax[0, 2].set_ylim(np.min(losses), np.max(losses))
+                ax[0, 2].set_ylim(np.min(losses), 1e-5)
                 ax[0, 2].set_xlim(0, len(losses))
             else:
                 k1.set_xdata(np.arange(0, lag))
@@ -417,21 +443,22 @@ for epoch in range(n_epochs):
         # update weights
         optimizer.step()
 
-        if loss.cpu().detach() < threshold:
-            gamma = gamma / 2
-            threshold = threshold / (1 + (5 / (count_gamma**0.5)))
-            count_gamma += 1
-            for g in optimizer.param_groups:
-                g["lr"] = gamma
+        # if loss.cpu().detach() < threshold:
+        # gamma = gamma / 2
+        # threshold = threshold / (1 + (5 / (count_gamma**0.5)))
+        # count_gamma += 1
+        # for g in optimizer.param_groups:
+        # g["lr"] = gamma
     # evaluate accuracy at end of each epoch
     my_nn.eval()
-    y_pred = my_nn(X_test.to(device))  ### SEND DATA TO GPU
-    mape = loss_fn(y_pred, y_test.to(device))  ### SEND DATA TO GPU
+    y_pred = my_nn(input_tensors_test.to(device))  ### SEND DATA TO GPU
+    mape = loss_fn(y_pred, output_tensors_test.to(device))  ### SEND DATA TO GPU
     mape = mape.cpu()  ### BRING BACK TO CPU
     if mape < best_mape:
         best_mape = mape
         print(f"    MAPE: {mape:.2e}")
         best_nn = copy.deepcopy(my_nn).cpu()
+        best_weights = copy.deepcopy(my_nn.state_dict())
     run_simulator_30_times(copy.deepcopy(my_nn).cpu())
 
     # rgb = np
@@ -440,12 +467,12 @@ plt.savefig("fugure after training with staring image of 10")
 
 
 # restore model and return best accuracy
-# my_nn.load_state_dict(best_nn) # no longer works
+my_nn.load_state_dict(best_weights)
 
 with open(
-    f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/Sample_sim/Best_model{random.randint(0,10000)}.pkl",
+    f"C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/Sample_sim/Best_weights{random.randint(0,10000)}.pkl",
     "wb",
 ) as file:
-    pickle.dump((best_nn), file)
+    pickle.dump((best_weights), file)
 
 print(f"final MAPE: {mape:.2e}")
