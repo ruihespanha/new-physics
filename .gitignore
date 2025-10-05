@@ -2,6 +2,7 @@ Training data
 *.pkl
 Training_data_pickle/
 *.png
+results/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

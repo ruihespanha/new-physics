@@ -6,6 +6,8 @@ from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 import pickle
 from numba import jit
+import re
+from tqdm import tqdm
 
 # working on this one
 
@@ -102,6 +104,28 @@ def ImageLoader(folder):
 
 
 def ImageLoaderPKL(folder):
+
+    images_by_id = {}
+    for file in tqdm(os.listdir(folder)):
+        m = re.search("RGB_image(?P<time>[0-9]+)_(?P<id>[0-9]+).pkl", file)
+        time = (int)(m["time"])
+        id = (int)(m["id"])
+
+        if not (id in images_by_id):
+            images_by_id[id] = [None] * 30
+
+        with open(f"{folder}" + "\\" + f"{file}", "rb") as filehandler:
+            images_by_id[id][time] = pickle.load(filehandler)
+
+    inputs = []
+    labels = []
+    for key in tqdm(sorted(images_by_id.keys())):
+        for t in range(29):
+            inputs.append(images_by_id[key][t])
+            labels.append(images_by_id[key][t + 1])
+
+    return inputs, labels
+
     images = []
     labels = []
     indexes = []  # all the sorted images (2D)
@@ -198,3 +222,14 @@ def ImageLoaderPKL(folder):
                         labels.append(indexes[i][u])
 
     return images, labels
+
+
+data_folder = "C:/Users/ruihe/GitHub/new-physics/Training_data_pickle"
+input_training_file = "C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_images_ordered.pkl"
+output_training_file = "C:/Users/ruihe/GitHub/new-physics/Training_data_pickle_compressed/total_image_labels_ordered.pkl"
+images, labels = ImageLoaderPKL(data_folder)
+
+with open(input_training_file, "wb") as file:
+    pickle.dump(images, file)
+with open(output_training_file, "wb") as file:
+    pickle.dump(labels, file)
