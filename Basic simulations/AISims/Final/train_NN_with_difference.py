@@ -286,150 +286,148 @@ for number_nodes in [
     plt.show(block=False)
     losses = []
     mses = []
-    with tqdm(range(n_epochs)) as tq:
-        for epoch in range(n_epochs):
-            arranged_arr = np.arange(len(input_tensors_training))
-            np.random.shuffle(arranged_arr)
-            randomized_train = [-1] * len(input_tensors_training)
-            randomized_labels = [-1] * len(input_tensors_training)
-            for i in range(len(input_tensors_training)):
-                randomized_train[i] = input_tensors_training.detach()[arranged_arr[i]]
-                randomized_labels[i] = output_tensors_training.detach()[arranged_arr[i]]
-            randomized_train = np.array(randomized_train)
-            randomized_labels = np.array(randomized_labels)
+    tq = tqdm(range(n_epochs))
+    for epoch in tq:
+        arranged_arr = np.arange(len(input_tensors_training))
+        np.random.shuffle(arranged_arr)
+        randomized_train = [-1] * len(input_tensors_training)
+        randomized_labels = [-1] * len(input_tensors_training)
+        for i in range(len(input_tensors_training)):
+            randomized_train[i] = input_tensors_training.detach()[arranged_arr[i]]
+            randomized_labels[i] = output_tensors_training.detach()[arranged_arr[i]]
+        randomized_train = np.array(randomized_train)
+        randomized_labels = np.array(randomized_labels)
 
-            my_nn.train()
-            for start in batch_start:
-                # take a batch
-                input_batch = convert_input_numpy_to_torch(
-                    randomized_train[start : start + batch_size, :, :, :]
+        my_nn.train()
+        for start in batch_start:
+            # take a batch
+            input_batch = convert_input_numpy_to_torch(
+                randomized_train[start : start + batch_size, :, :, :]
+            )
+            output_batch = convert_input_numpy_to_torch(
+                randomized_labels[start : start + batch_size, :, :, :]
+            )
+            # forward pass in GPU
+            output_batch_prediction = my_nn(
+                input_batch.to(device)
+            )  ### SEND DATA TO GPU
+
+            loss = loss_fn(
+                output_batch_prediction, output_batch.to(device)
+            )  ### SEND DATA TO GPU
+            output_batch_prediction = (
+                output_batch_prediction.cpu()
+            )  ### BRING PREDICTION TOP CPU FOR PLOT
+            losses.append(loss.cpu().detach())  ### BRING LOSS TO CPU FOR PLOT
+
+            if ((int)(start / batch_size)) % 100 == 1:  ### ONLY SHOW 1 OUT OF 100
+                tq.set_description(
+                    f"epoch={epoch}, loss={loss:.2e}, best mape={best_mape:.2e}, lr={learning_rate:.2e}"
                 )
-                output_batch = convert_input_numpy_to_torch(
-                    randomized_labels[start : start + batch_size, :, :, :]
-                )
-                # forward pass in GPU
-                output_batch_prediction = my_nn(
-                    input_batch.to(device)
-                )  ### SEND DATA TO GPU
-
-                loss = loss_fn(
-                    output_batch_prediction, output_batch.to(device)
-                )  ### SEND DATA TO GPU
-                output_batch_prediction = (
-                    output_batch_prediction.cpu()
-                )  ### BRING PREDICTION TOP CPU FOR PLOT
-                losses.append(loss.cpu().detach())  ### BRING LOSS TO CPU FOR PLOT
-
-                if ((int)(start / batch_size)) % 100 == 1:  ### ONLY SHOW 1 OUT OF 100
-                    tq.set_description(
-                        f"epoch={epoch}, loss={loss:.2e}, best mape={best_mape:.2e}, lr={learning_rate:.2e}"
-                    )
-                    output_Img = np.concatenate(
-                        (
-                            np.zeros(
-                                (
-                                    parameters["image_number_rows"],
-                                    parameters["image_number_cols"],
-                                    1,
-                                )
-                            ),
-                            output_batch_prediction[0]
-                            .detach()
-                            .numpy()
-                            .reshape(
+                output_Img = np.concatenate(
+                    (
+                        np.zeros(
+                            (
                                 parameters["image_number_rows"],
                                 parameters["image_number_cols"],
-                                2,
-                            ),
+                                1,
+                            )
                         ),
-                        axis=2,
+                        output_batch_prediction[0]
+                        .detach()
+                        .numpy()
+                        .reshape(
+                            parameters["image_number_rows"],
+                            parameters["image_number_cols"],
+                            2,
+                        ),
+                    ),
+                    axis=2,
+                )
+
+                output_test_prediction = my_nn(input_tensors_test[0:1].to(device)).cpu()
+
+                send_numpy_data_to_image(
+                    axis_predicted_increment,
+                    image_predicted_increment,
+                    convert_output_torch_to_numpy_increment(
+                        output_test_prediction[0:1]
+                    )[0],
+                    "predicted increment",
+                    increment=True,
+                )
+
+                send_numpy_data_to_image(
+                    axis_actual_increment,
+                    image_actual_increment,
+                    convert_output_torch_to_numpy_increment(output_tensors_test[0:1])[
+                        0
+                    ],
+                    "actual increment",
+                    increment=True,
+                )
+
+                if True:
+                    # plot losses
+                    line_losses.set_xdata(np.arange(0, len(losses)))
+                    line_losses.set_ydata(np.array(losses))
+                    axis_losses.set_ylim(np.min(losses), 10e-6)
+                    axis_losses.set_xlim(0, len(losses))
+                    # plot mses
+                    if mses:
+                        x = np.arange(0, len(mses))
+                        yy = np.stack(mses, 0)
+                        for i, line in enumerate(lines_mses):
+                            line.set_xdata(x)
+                            line.set_ydata(yy[:, i])
+                        # 1st mse is zero, so do not include in minimum
+                        axis_mses.set_ylim(np.min(yy[:, 1:]), 1e-3)
+                        axis_mses.set_xlim(0, len(mses) - 1)
+                else:
+                    lag = 10000
+                    line_losses.set_xdata(np.arange(0, lag))
+                    line_losses.set_ydata(np.array(losses[len(losses) - lag :]))
+                    axis_losses.set_ylim(
+                        np.min(losses[len(losses) - lag :]),
+                        np.max(losses[len(losses) - lag :]),
                     )
 
-                    output_test_prediction = my_nn(
-                        input_tensors_test[0:1].to(device)
-                    ).cpu()
+                # axis_losses.set_xlim(0, lag)
 
-                    send_numpy_data_to_image(
-                        axis_predicted_increment,
-                        image_predicted_increment,
-                        convert_output_torch_to_numpy_increment(
-                            output_test_prediction[0:1]
-                        )[0],
-                        "predicted increment",
-                        increment=True,
-                    )
+                fig.canvas.draw()
+                fig.canvas.flush_events()
 
-                    send_numpy_data_to_image(
-                        axis_actual_increment,
-                        image_actual_increment,
-                        convert_output_torch_to_numpy_increment(
-                            output_tensors_test[0:1]
-                        )[0],
-                        "actual increment",
-                        increment=True,
-                    )
+            count += 1
+            # backward pass
+            optimizer.zero_grad()
+            loss.backward()
+            # update weights
+            optimizer.step()
 
-                    if True:
-                        # plot losses
-                        line_losses.set_xdata(np.arange(0, len(losses)))
-                        line_losses.set_ydata(np.array(losses))
-                        axis_losses.set_ylim(np.min(losses), 10e-6)
-                        axis_losses.set_xlim(0, len(losses))
-                        # plot mses
-                        if mses:
-                            x = np.arange(0, len(mses))
-                            yy = np.stack(mses, 0)
-                            for i, line in enumerate(lines_mses):
-                                line.set_xdata(x)
-                                line.set_ydata(yy[:, i])
-                            # 1st mse is zero, so do not include in minimum
-                            axis_mses.set_ylim(np.min(yy[:, 1:]), 1e-3)
-                            axis_mses.set_xlim(0, len(mses) - 1)
-                    else:
-                        lag = 10000
-                        line_losses.set_xdata(np.arange(0, lag))
-                        line_losses.set_ydata(np.array(losses[len(losses) - lag :]))
-                        axis_losses.set_ylim(
-                            np.min(losses[len(losses) - lag :]),
-                            np.max(losses[len(losses) - lag :]),
-                        )
+            # if loss.cpu().detach() < threshold:
+            # learning_rate = learning_rate / 2
+            # threshold = threshold / (1 + (5 / (count_learning_rate**0.5)))
+            # count_learning_rate += 1
+            # for g in optimizer.param_groups:
+            # g["lr"] = learning_rate
+        # evaluate accuracy at end of each epoch
+        my_nn.eval()
+        output_batch_prediction = my_nn(
+            input_tensors_test.to(device)
+        )  ### SEND DATA TO GPU
+        mape = loss_fn(
+            output_batch_prediction, output_tensors_test.to(device)
+        )  ### SEND DATA TO GPU
+        mape = mape.cpu()  ### BRING BACK TO CPU
+        if mape < best_mape:
+            best_mape = mape
+            # print(f"    MAPE: {mape:.2e}")
+            best_nn = copy.deepcopy(my_nn).cpu()
+            best_weights = my_nn.get_weights()
+        (predicted_images, mse) = run_simulator_20_times(copy.deepcopy(my_nn).cpu())
+        mses.append(mse)
 
-                    # axis_losses.set_xlim(0, lag)
-
-                    fig.canvas.draw()
-                    fig.canvas.flush_events()
-
-                count += 1
-                # backward pass
-                optimizer.zero_grad()
-                loss.backward()
-                # update weights
-                optimizer.step()
-
-                # if loss.cpu().detach() < threshold:
-                # learning_rate = learning_rate / 2
-                # threshold = threshold / (1 + (5 / (count_learning_rate**0.5)))
-                # count_learning_rate += 1
-                # for g in optimizer.param_groups:
-                # g["lr"] = learning_rate
-            # evaluate accuracy at end of each epoch
-            my_nn.eval()
-            output_batch_prediction = my_nn(
-                input_tensors_test.to(device)
-            )  ### SEND DATA TO GPU
-            mape = loss_fn(
-                output_batch_prediction, output_tensors_test.to(device)
-            )  ### SEND DATA TO GPU
-            mape = mape.cpu()  ### BRING BACK TO CPU
-            if mape < best_mape:
-                best_mape = mape
-                # print(f"    MAPE: {mape:.2e}")
-                best_nn = copy.deepcopy(my_nn).cpu()
-                best_weights = my_nn.get_weights()
-            (predicted_images, mse) = run_simulator_20_times(copy.deepcopy(my_nn).cpu())
-            mses.append(mse)
-
-            # rgb = np
+        # rgb = np
 
     print(f"final MAPE: {mape:.2e}")
 
